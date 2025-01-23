@@ -12,7 +12,8 @@ import {
   Note
 } from '@contentful/f36-components';
 import { useSDK } from '@contentful/react-apps-toolkit';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { css } from 'emotion';
 import { generateImage } from '../services/huggingfaceImage';
 import { refinePrompt } from '../services/huggingfaceText';
 
@@ -31,6 +32,24 @@ const Page = () => {
   const [error, setError] = useState<string | null>(null);
   const [refinedPrompt, setRefinedPrompt] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [timer, setTimer] = useState(0);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (isTimerActive) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev + 1);
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isTimerActive]);
 
   const handleRefinePrompt = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +80,8 @@ const Page = () => {
 
     setIsGenerating(true);
     setError(null);
+    setTimer(0);
+    setIsTimerActive(true);
     try {
       const parameters = sdk.parameters.installation as AppInstallationParameters;
       if (!parameters) {
@@ -75,6 +96,7 @@ const Page = () => {
       setError(error instanceof Error ? error.message : 'Failed to generate image');
     } finally {
       setIsGenerating(false);
+      setIsTimerActive(false);
     }
   };
 
@@ -85,18 +107,12 @@ const Page = () => {
     setError(null);
     
     try {
-      // Fetch the image data
       const response = await fetch(generatedImage);
       const blob = await response.blob();
-      
-      // Create a File object from the Blob
       const file = new File([blob], 'ai-generated-image.png', { type: 'image/png' });
-      
-      // Create upload
       const buffer = await file.arrayBuffer();
       const upload = await sdk.cma.upload.create({ spaceId: sdk.ids.space }, { file: buffer });
 
-      // Create asset
       let asset = await sdk.cma.asset.create(
         { spaceId: sdk.ids.space },
         {
@@ -120,7 +136,6 @@ const Page = () => {
         }
       );
 
-      // Process and publish
       asset = await sdk.cma.asset.processForLocale(
         { spaceId: sdk.ids.space, assetId: asset.sys.id, version: asset.sys.version },
         asset,
@@ -131,7 +146,6 @@ const Page = () => {
         asset
       );
 
-      // Show success message
       sdk.notifier.success('Asset successfully uploaded and published');
       
     } catch (error) {
@@ -219,6 +233,16 @@ const Page = () => {
 
       {/* Results Section */}
       <Grid.Item>
+        {isTimerActive && (
+          <>
+            <Note variant="primary" className={css({ margin: '24px 0' })}>
+              Some models take ~60 seconds for image generation.
+           </Note>
+           <Note variant="premium" className={css({ margin: '24px 0' })}>
+             Timer: {timer} seconds
+           </Note>
+          </>
+        )}
         {error && (
           <Note variant="negative">
             {error}
